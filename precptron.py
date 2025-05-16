@@ -41,8 +41,8 @@ class NeuralNetwork:
                  errorFuntionDerivative:ErrorFunctionDerivative=sq_error_derivative):
         self.layers_dim=layers_dim
         # Initialize weights and biases as before
-        self.weight=[ran.randn(y,x) for x,y in zip(layers_dim,layers_dim[1:])]
-        self.bias=[ran.randn(x,1) for x in layers_dim[1:]]
+        self.weights=[ran.randn(y,x) for x,y in zip(layers_dim,layers_dim[1:])]
+        self.biases=[ran.randn(x,1) for x in layers_dim[1:]]
         # Neuron aren't initialized as array because of batches,As their are veraity of batches
         self.neuron:List[ndarray]=[None for x in layers_dim]
         self.non_linear_func=non_linear_func
@@ -62,7 +62,7 @@ class NeuralNetwork:
             # Update to handle batches - input is now a matrix where each column is a sample
             self.neuron[0] = input
         
-        for i,(weight,bias) in enumerate(zip(self.weight,self.bias)):
+        for i,(weight,bias) in enumerate(zip(self.weights,self.biases)):
             self.neuron[i+1]=self.non_linear_func(weight @ self.neuron[i] + bias)
         return self.neuron[-1]  # Return output activations
     
@@ -84,7 +84,7 @@ class NeuralNetwork:
                         self.non_linear_func_derivitave(self.neuron[-1])
         
         # Backpropagate through layers
-        for w, b, n in zip(self.weight[::-1], self.bias[::-1], self.neuron[:-1][::-1]):
+        for w, b, n in zip(self.weights[::-1], self.biases[::-1], self.neuron[:-1][::-1]):
             # Batch version of derivatives
             b_derivative = np.mean(in_derivative, axis=1, keepdims=True)  # Sum across batch dimension
 
