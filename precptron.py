@@ -21,13 +21,10 @@ def sq_error(output:np.ndarray,expected:np.ndarray)->float:
 
 def sq_error_derivative(output:np.ndarray,expected:np.ndarray)->np.ndarray:
     # Updated to handle batches by including the batch size in normalization
-    return 2*(output-expected) / output.shape[1]
+    return 2*(output-expected)
     # x axis is down ,and y axis is right
     # output.shape[1] means y axis.When you run the entire batch in there
     # and average it for average error.
-
-
-
 
 ArrayFunction=Callable[[np.ndarray],np.ndarray]
 ErrorFunction=Callable[[np.ndarray,np.ndarray],float]
@@ -41,14 +38,14 @@ class NeuralNetwork:
                  errorFuntionDerivative:ErrorFunctionDerivative=sq_error_derivative):
         self.layers_dim=layers_dim
         # Initialize weights and biases as before
-        self.weights=[ran.randn(y,x) for x,y in zip(layers_dim,layers_dim[1:])]
-        self.biases=[ran.randn(x,1) for x in layers_dim[1:]]
+        self.weights=[ran.randn(y,x)-0.5 for x,y in zip(layers_dim,layers_dim[1:])]
+        self.biases=[ran.randn(x,1)-0.5 for x in layers_dim[1:]]
         # Neuron aren't initialized as array because of batches,As their are veraity of batches
         self.neuron:List[ndarray]=[None for x in layers_dim]
         self.non_linear_func=non_linear_func
         self.non_linear_func_derivitave=non_linear_func_derivitave
         self.errorFunction=errorFunction
-        self.ErrorFunctionDerivative=errorFuntionDerivative
+        self.errorFunctionDerivative=errorFuntionDerivative
     
     # Updated to handle batch inputs
     def forward_pass(self, input:np.ndarray=None):
@@ -64,7 +61,7 @@ class NeuralNetwork:
         
         for i,(weight,bias) in enumerate(zip(self.weights,self.biases)):
             self.neuron[i+1]=self.non_linear_func(weight @ self.neuron[i] + bias)
-        return self.neuron[-1]  # Return output activations
+        #return self.neuron[-1]  # Return output activations
     
     # Updated to handle batch inputs
     def backward_pass(self, expected:np.ndarray, learning_rate:float):
@@ -77,17 +74,17 @@ class NeuralNetwork:
         """
         batch_size = expected.shape[1]
         
-        errorBefore=self.errorFunction(self.neuron[-1], expected)
         
         # Initial error derivative for output layer (now handles batches)
-        in_derivative = self.ErrorFunctionDerivative(self.neuron[-1], expected) * \
+        in_derivative = self.errorFunctionDerivative(self.neuron[-1], expected) * \
                         self.non_linear_func_derivitave(self.neuron[-1])
+        # in_derivative is now (neuron number, batch size)
         
         # Backpropagate through layers
-        for w, b, n in zip(self.weights[::-1], self.biases[::-1], self.neuron[:-1][::-1]):
+        for w, b, i in zip(self.weights[::-1], self.biases[::-1], self.neuron[:-1][::-1]):
             # Batch version of derivatives
-            b_derivative = np.mean(in_derivative, axis=1, keepdims=True)  # Sum across batch dimension
-
+            b_derivative = np.sum(in_derivative, axis=1,keepdims=True)/batch_size  # Sum across batch dimension
+            # not need to divide by batch size as it is mean
             """
                 [[1,2,3],
                  [2,3,4],
@@ -96,21 +93,30 @@ class NeuralNetwork:
                                                                                                               [4],]
 
             """
-            w_derivative = (in_derivative @ n.T)/batch_size  # Matrix multiplication handles all batch samples
+            w_derivative = (in_derivative @ i.T)/batch_size # Matrix multiplication handles all batch samples
+
+            """
+               w_derivative= [1   (inderivative)*[1 2 3 4](neuron)
+                              2
+                              3
+                              4]
+               With batch  [[1 5 9  13]  @ [[1 2 3 4]       
+                            [2 6 10 14]     [2 3 4 5]
+                            [3 7 11 15]     [6 7 8 9]
+                            [4 8 12 16]]    [10 11 12 13]]
+
+               Those things got automatically sums up
+            """
             
             # Propagate error to previous layer (for all samples in batch)
-            in_derivative = w.T @ in_derivative * self.non_linear_func_derivitave(n)
+            in_derivative = w.T @ in_derivative * self.non_linear_func_derivitave(i)
             
             # Update weights and biases (single update using batch average)
-            w[...] += -learning_rate * w_derivative
-            b[...] += -learning_rate * b_derivative
+            w[...] -= learning_rate * w_derivative 
+            b[...] -= learning_rate * b_derivative 
         
-        # Perform forward pass to compute new error
-        self.forward_pass()
-        errorNow=self.errorFunction(self.neuron[-1], expected)
-        assert(errorNow<errorBefore)
-        #This is to actually check if the update is happening as intended.
-    
+    def errorCheck(self,expected:ndarray)->float:
+        return self.errorFunction(self.neuron[-1],expected)
     # New method for batch training
     def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray, learning_rate:float):
         """
@@ -130,7 +136,7 @@ class NeuralNetwork:
     # New method for full dataset training with mini-batches
     def train(self, X_train:np.ndarray, y_train:np.ndarray, 
               batch_size:int, epochs:int, learning_rate:float, 
-              verbose:bool=True):
+              xy_test:None|tuple[np.ndarray,np.ndarray]=None,test_step=200):
         """
         Train the neural network using mini-batch gradient descent
         
@@ -143,53 +149,53 @@ class NeuralNetwork:
             verbose: Whether to print progress
         """
         # X_train is (784,sample size)
-        n_samples = X_train.shape[1]
-        n_batches = int(np.ceil(n_samples / batch_size))
-        
+        n_data = X_train.shape[1]
+        previous_error=float('inf')
+        train_error=0
         for epoch in range(epochs):
+            randomSample = np.random.randint(0,n_data,batch_size)
             # Shuffle training data
-            indices = np.random.permutation(n_samples)
-            X_shuffled = X_train[:, indices]
-            y_shuffled = y_train[:, indices]
-            
-            total_loss = 0
-            
-            # Mini-batch training
-            for i in range(n_batches):
-                start_idx = i * batch_size
-                end_idx = min((i + 1) * batch_size, n_samples)
-                
-                X_batch = X_shuffled[:, start_idx:end_idx]
-                y_batch = y_shuffled[:, start_idx:end_idx]
-                
-                # Forward pass
-                self.forward_pass(X_batch)
-                
-                # Compute loss for monitoring
-                batch_loss = self.errorFunction(self.neuron[-1], y_batch)
-                total_loss += batch_loss * (end_idx - start_idx) / n_samples
-                
-                # Backward pass
-                self.backward_pass(y_batch, learning_rate)
-            
-            if verbose:
-                print(f"Epoch {epoch+1}/{epochs} - loss: {total_loss:.6f}")
+            xData=X_train[:,randomSample]
+            yData=y_train[:,randomSample]
+            self.forward_pass(xData)
+            train_error+=self.errorCheck(yData)
+            self.backward_pass(yData,learning_rate)
+            if(epoch%test_step==0):
+                print(f"Train error: {train_error/test_step:6f}")
+                train_error=0
+                if xy_test is not None:
+                    x_test,y_test=xy_test
+                    self.forward_pass(x_test)
+                    current_error=self.errorCheck(y_test)
+                    if previous_error>current_error:
+                        previous_error=current_error
+                        if epoch>2000: self.save_parameters("temp.pkl")
+                        print(f"epoch {epoch}:Model updated {previous_error:6f}")
+                    else:
+                        print(f"epoch {epoch}:Model degraded {current_error:6f}")
+
+
+
 
 
 
     def save_parameters(self, filename: str):
         """Save weights and biases to a file using pickle."""
         with open(filename, 'wb') as f:
-            pickle.dump({'weights': self.weights, 'biases': self.biases}, f)
+            pickle.dump(self, f)
         print(f"Model parameters saved to {filename}")
     
-    def load_parameters(self, filename: str):
+
+
+def load_parameters(filename: str)->NeuralNetwork:
         """Load weights and biases from a file using pickle."""
         with open(filename, 'rb') as f:
-            params = pickle.load(f)
-            self.weights = params['weights']
-            self.biases = params['biases']
+            nn = pickle.load(f)
         print(f"Model parameters loaded from {filename}")
+        return nn
+
+
+
 
 # Function to load and preprocess MNIST
 def load_mnist(filename):
@@ -232,22 +238,17 @@ if __name__ == "__main__":
     
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
-    nn = NeuralNetwork([784, 16,16, 10])
-    
+    nn:NeuralNetwork=load_parameters("./temp.pkl")
     # Train with mini-batches
     print("Training neural network...")
     nn.train(
-        X_train[:, :10000],  # Using first 10000 samples for faster training
-        y_train[:, :10000],
-        batch_size=64,
-        epochs=5000,
-        learning_rate=0.1
+        X_train,  # Using first 10000 samples for faster training
+        y_train,
+        batch_size=128,
+        epochs=50000,
+        learning_rate=0.1,
+        xy_test=(X_test,y_test)
     )
     nn.save_parameters("mnist_model.pkl")
     # Evaluate on some test samples
-    print("Evaluating on test samples...")
-    nn.forward_pass(X_test[:, :100])  # First 100 test samples
-    predictions = np.argmax(nn.neuron[-1], axis=0)
-    true_labels = np.argmax(y_test[:, :100], axis=0)
-    accuracy = np.mean(predictions == true_labels)
-    print(f"Test accuracy on 100 samples: {accuracy:.4f}")
+    
