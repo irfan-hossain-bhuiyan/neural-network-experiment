@@ -2,7 +2,7 @@ import numpy as np
 import gzip
 import pickle
 import precptron as p
-
+from precptron import *
 
 def load_mnist(filename):
     """Load MNIST dataset from pickle file"""
@@ -41,15 +41,16 @@ def main():
     print(f"X_train: {X_test.shape}, y_train: {y_test.shape}")
     
     print("Creating neural network...")
-    nn = p.NeuralNetwork([784, 16,16, 10])
-    nn.load_parameters("./mnist_model.pkl")
+    nn=p.load_parameters("./temp.pkl")
 
     print("Evaluating on test samples...")
-    nn.forward_pass(X_test[:, :100])  # First 100 test samples
+    nn.forward_pass(X_test)  # First 100 test samples
     predictions = np.argmax(nn.neuron[-1], axis=0)
-    true_labels = np.argmax(y_test[:, :100], axis=0)
-    for x,y in zip(predictions,true_labels):
-        print("output: ",x,"  answer:",y)
+    true_labels = np.argmax(y_test, axis=0)
+    print(f"avg error :{np.mean(predictions==true_labels)}")
+    #for x,y in zip(predictions,true_labels):
+    #    if x!=y:
+    #        print("output: ",x,"  answer:",y)
 
 
 if __name__ == "__main__":

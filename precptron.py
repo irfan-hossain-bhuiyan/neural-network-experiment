@@ -5,7 +5,9 @@ from numpy._core.numeric import ndarray
 import numpy.random as ran
 import gzip
 import pickle
-
+RED = "\033[91m"
+GREEN = "\033[92m"
+RESET = "\033[0m"
 # Original functions remain unchanged
 def sigmoid(x:np.ndarray):
     return 1 / (1 + np.exp(-x))
@@ -115,7 +117,7 @@ class NeuralNetwork:
             w[...] -= learning_rate * w_derivative 
             b[...] -= learning_rate * b_derivative 
         
-    def errorCheck(self,expected:ndarray)->float:
+    def costCheck(self,expected:ndarray)->float:
         return self.errorFunction(self.neuron[-1],expected)
     # New method for batch training
     def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray, learning_rate:float):
@@ -132,7 +134,10 @@ class NeuralNetwork:
         
         # Backward pass with batch
         self.backward_pass(y_batch, learning_rate)
-    
+    def predicted_value(self):
+        return self.neuron[-1].argmax(axis=0)
+    def error_check(self,y_value:np.ndarray):
+        return np.mean(self.predicted_value()==y_value.argmax(axis=0))
     # New method for full dataset training with mini-batches
     def train(self, X_train:np.ndarray, y_train:np.ndarray, 
               batch_size:int, epochs:int, learning_rate:float, 
@@ -150,29 +155,35 @@ class NeuralNetwork:
         """
         # X_train is (784,sample size)
         n_data = X_train.shape[1]
-        previous_error=float('inf')
-        train_error=0
+        train_error=1e9
+        previous_error=1e9
+        previous_train_error=1e9
+        errorIncreased=0
         for epoch in range(epochs):
             randomSample = np.random.randint(0,n_data,batch_size)
             # Shuffle training data
             xData=X_train[:,randomSample]
             yData=y_train[:,randomSample]
             self.forward_pass(xData)
-            train_error+=self.errorCheck(yData)
+            train_error+=self.costCheck(yData)
             self.backward_pass(yData,learning_rate)
             if(epoch%test_step==0):
                 print(f"Train error: {train_error/test_step:6f}")
-                train_error=0
-                if xy_test is not None:
+                errorIncreased=(train_error/previous_train_error)**1/3
+                previous_train_error=train_error
+                learning_rate/=errorIncreased
+
+                if xy_test is not None and train_error<0.3:
                     x_test,y_test=xy_test
                     self.forward_pass(x_test)
-                    current_error=self.errorCheck(y_test)
+                    current_error=self.costCheck(y_test)
                     if previous_error>current_error:
                         previous_error=current_error
                         if epoch>2000: self.save_parameters("temp.pkl")
                         print(f"epoch {epoch}:Model updated {previous_error:6f}")
                     else:
                         print(f"epoch {epoch}:Model degraded {current_error:6f}")
+                train_error=0
 
 
 
@@ -238,14 +249,15 @@ if __name__ == "__main__":
     
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
-    nn:NeuralNetwork=load_parameters("./temp.pkl")
+#    nn:NeuralNetwork=load_parameters("./temp.pkl")
+    nn:NeuralNetwork= NeuralNetwork([784,64,16,10])
     # Train with mini-batches
     print("Training neural network...")
     nn.train(
         X_train,  # Using first 10000 samples for faster training
         y_train,
         batch_size=128,
-        epochs=50000,
+        epochs=200000,
         learning_rate=0.1,
         xy_test=(X_test,y_test)
     )
