@@ -37,7 +37,7 @@ class NeuralNetwork:
                  non_linear_func:ArrayFunction=sigmoid,
                  non_linear_func_derivitave:ArrayFunction=sigmoid_derivative,
                  errorFunction:ErrorFunction=sq_error,
-                 errorFuntionDerivative:ErrorFunctionDerivative=sq_error_derivative):
+                 errorFunctionDerivative:ErrorFunctionDerivative=sq_error_derivative):
         self.layers_dim=layers_dim
         # Initialize weights and biases as before
         self.weights=[ran.randn(y,x)-0.5 for x,y in zip(layers_dim,layers_dim[1:])]
@@ -47,7 +47,7 @@ class NeuralNetwork:
         self.non_linear_func=non_linear_func
         self.non_linear_func_derivitave=non_linear_func_derivitave
         self.errorFunction=errorFunction
-        self.errorFunctionDerivative=errorFuntionDerivative
+        self.errorFunctionDerivative=errorFunctionDerivative
     
     # Updated to handle batch inputs
     def forward_pass(self, input:np.ndarray=None):
@@ -141,7 +141,7 @@ class NeuralNetwork:
     # New method for full dataset training with mini-batches
     def train(self, X_train:np.ndarray, y_train:np.ndarray, 
               batch_size:int, epochs:int, learning_rate:float, 
-              xy_test:None|tuple[np.ndarray,np.ndarray]=None,test_step=200):
+              xy_test:None|tuple[np.ndarray,np.ndarray]=None,test_step=20):
         """
         Train the neural network using mini-batch gradient descent
         
@@ -155,35 +155,35 @@ class NeuralNetwork:
         """
         # X_train is (784,sample size)
         n_data = X_train.shape[1]
-        train_error=1e9
         previous_error=1e9
-        previous_train_error=1e9
-        errorIncreased=0
-        for epoch in range(epochs):
-            randomSample = np.random.randint(0,n_data,batch_size)
+        for epoch in range(1,epochs+1):
+            randomSample = np.random.randint(0,n_data,n_data)
             # Shuffle training data
             xData=X_train[:,randomSample]
             yData=y_train[:,randomSample]
-            self.forward_pass(xData)
-            train_error+=self.costCheck(yData)
-            self.backward_pass(yData,learning_rate)
+            train_error=0
+            chunkNumber=n_data//batch_size
+            for chunkIndex in range(0,chunkNumber):
+                arrayIndex=chunkIndex*batch_size
+                arrayIndex1=arrayIndex+batch_size
+                xSample=xData[:,arrayIndex:arrayIndex1]
+                ySample=yData[:,arrayIndex:arrayIndex1]
+                self.forward_pass(xSample)
+                train_error+=self.costCheck(ySample)
+                self.backward_pass(ySample,learning_rate)
+            train_error/=chunkNumber
+            print(f"epoch {epoch}:train error {train_error:6f}")
             if(epoch%test_step==0):
-                print(f"Train error: {train_error/test_step:6f}")
-                errorIncreased=(train_error/previous_train_error)**1/3
-                previous_train_error=train_error
-                learning_rate/=errorIncreased
-
                 if xy_test is not None and train_error<0.3:
                     x_test,y_test=xy_test
                     self.forward_pass(x_test)
                     current_error=self.costCheck(y_test)
                     if previous_error>current_error:
                         previous_error=current_error
-                        if epoch>2000: self.save_parameters("temp.pkl")
+                        if epoch>200: self.save_parameters("temp.pkl")
                         print(f"epoch {epoch}:Model updated {previous_error:6f}")
                     else:
                         print(f"epoch {epoch}:Model degraded {current_error:6f}")
-                train_error=0
 
 
 
@@ -249,15 +249,15 @@ if __name__ == "__main__":
     
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
-#    nn:NeuralNetwork=load_parameters("./temp.pkl")
-    nn:NeuralNetwork= NeuralNetwork([784,64,16,10])
+    nn:NeuralNetwork=load_parameters("./mnist_model.pkl")
+    # nn:NeuralNetwork= NeuralNetwork([784,64,16,10])
     # Train with mini-batches
     print("Training neural network...")
     nn.train(
-        X_train,  # Using first 10000 samples for faster training
+        X_train,  
         y_train,
         batch_size=128,
-        epochs=200000,
+        epochs=2000,
         learning_rate=0.1,
         xy_test=(X_test,y_test)
     )
