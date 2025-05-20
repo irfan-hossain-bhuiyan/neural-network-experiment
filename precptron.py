@@ -120,7 +120,7 @@ class NeuralNetwork:
     def costCheck(self,expected:ndarray)->float:
         return self.errorFunction(self.neuron[-1],expected)
     # New method for batch training
-    def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray, learning_rate:float):
+    def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray, learning_rate:float,batch_iteration:int=1):
         """
         Train on a single batch
         
@@ -130,18 +130,35 @@ class NeuralNetwork:
             learning_rate: Learning rate for gradient descent
         """
         # Forward pass with batch
-        self.forward_pass(X_batch)
-        
-        # Backward pass with batch
-        self.backward_pass(y_batch, learning_rate)
+        error=0
+        for _ in range(batch_iteration):
+            self.forward_pass(X_batch)
+            error+=self.error_check(y_batch)
+            self.backward_pass(y_batch, learning_rate)
+        return error/batch_iteration
     def predicted_value(self):
         return self.neuron[-1].argmax(axis=0)
     def error_check(self,y_value:np.ndarray):
         return np.mean(self.predicted_value()==y_value.argmax(axis=0))
     # New method for full dataset training with mini-batches
-    def train(self, X_train:np.ndarray, y_train:np.ndarray, 
-              batch_size:int, epochs:int, learning_rate:float, 
-              xy_test:None|tuple[np.ndarray,np.ndarray]=None,test_step=200):
+    def save_parameters(self, filename: str):
+        """Save weights and biases to a file using pickle."""
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
+        print(f"Model parameters saved to {filename}")
+    
+
+
+
+def load_parameters(filename: str)->NeuralNetwork:
+        """Load weights and biases from a file using pickle."""
+        with open(filename, 'rb') as f:
+            nn = pickle.load(f)
+        print(f"Model parameters loaded from {filename}")
+        return nn
+
+def trainBatchall (nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray, 
+                   batch_size:int, learning_rate:float,batchIteration:int=1):
         """
         Train the neural network using mini-batch gradient descent
         
@@ -154,58 +171,49 @@ class NeuralNetwork:
             verbose: Whether to print progress
         """
         # X_train is (784,sample size)
-        n_data = X_train.shape[1]
-        train_error=1e9
-        previous_error=1e9
-        previous_train_error=1e9
-        errorIncreased=0
-        for epoch in range(epochs):
-            randomSample = np.random.randint(0,n_data,batch_size)
-            # Shuffle training data
-            xData=X_train[:,randomSample]
-            yData=y_train[:,randomSample]
-            self.forward_pass(xData)
-            train_error+=self.costCheck(yData)
-            self.backward_pass(yData,learning_rate)
-            if(epoch%test_step==0):
-                print(f"Train error: {train_error/test_step:6f}")
-                errorIncreased=(train_error/previous_train_error)**1/3
-                previous_train_error=train_error
-                learning_rate/=errorIncreased
+        n_data = x_train.shape[1]
+        chunkAmount = n_data//batch_size
+        trainError=0
+        for chunkNo in range(0,chunkAmount):
+            chunkIndex=chunkNo*chunkAmount
+            chunkIndex1=chunkIndex+batch_size
+            trainError+=nn.train_batch(X_batch=x_train[:,chunkIndex:chunkIndex1],
+                           y_batch=y_train[:,chunkIndex:chunkIndex1],
+                           learning_rate=learning_rate,
+                           batchIteration=batchIteration,)
+        trainError/=chunkAmount
+        return trainError
+def trainRandomBatchAll(nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray,
+                        batch_size:int, learning_rate:float,batchIteration:int=1):
+    n_data= x_train.shape[1]
+    n_permutation= np.random.permutation(n_data)
+    return trainBatchall(nn,x_train[:,n_permutation],y_train[:,n_permutation],batch_size,learning_rate,batchIteration)
 
-                if xy_test is not None and train_error<0.3:
-                    x_test,y_test=xy_test
-                    self.forward_pass(x_test)
-                    current_error=self.costCheck(y_test)
-                    if previous_error>current_error:
-                        previous_error=current_error
-                        if epoch>2000: self.save_parameters("temp.pkl")
-                        print(f"epoch {epoch}:Model updated {previous_error:6f}")
-                    else:
-                        print(f"epoch {epoch}:Model degraded {current_error:6f}")
-                train_error=0
-
+def binaryIteration(n:int):
+    yield (0,1)
+    for x  in range(1,n):
+        i=0
+        axis=x
+        while axis%2==0:
+            i+=1
+            axis>>=1
+            xm1=x-(1<<i)
+            yield (xm1,x)
+        yield (x,x+1)
 
 
-
-
-
-    def save_parameters(self, filename: str):
-        """Save weights and biases to a file using pickle."""
-        with open(filename, 'wb') as f:
-            pickle.dump(self, f)
-        print(f"Model parameters saved to {filename}")
-    
-
-
-def load_parameters(filename: str)->NeuralNetwork:
-        """Load weights and biases from a file using pickle."""
-        with open(filename, 'rb') as f:
-            nn = pickle.load(f)
-        print(f"Model parameters loaded from {filename}")
-        return nn
-
-
+def trainRandomBatchIncremental(nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray,
+                batchSize:int, learning_rate:float,batchIteration:int=1):
+    batchAmount=x_train.shape[1]//batchSize
+    n_permutation= np.random.permutation(x_train.shape[1])
+    x_train=x_train[:,n_permutation]
+    y_train=y_train[:,n_permutation]
+    for (x,x1) in binaryIteration(batchAmount):
+        batchIndex=x*batchSize
+        batchIndex1=x1*batchSize
+        x_batch=x_train[:,batchIndex:batchIndex1]
+        y_batch=y_train[:,batchIndex:batchIndex1]
+        yield nn.train_batch(x_batch,y_batch,learning_rate,batchIteration)
 
 
 # Function to load and preprocess MNIST
@@ -242,25 +250,19 @@ def load_mnist(filename):
 if __name__ == "__main__":
     # Load MNIST dataset
     print("Loading MNIST dataset...")
-    (X_train, y_train), (X_val, y_val), (X_test, y_test) = load_mnist('./data/mnist.pkl.gz')
+    (x_train, y_train), (X_val, y_val), (X_test, y_test) = load_mnist('./data/mnist.pkl.gz')
     
     print("Dataset shapes:")
-    print(f"X_train: {X_train.shape}, y_train: {y_train.shape}")
+    print(f"X_train: {x_train.shape}, y_train: {y_train.shape}")
     
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
 #    nn:NeuralNetwork=load_parameters("./temp.pkl")
-    nn:NeuralNetwork= NeuralNetwork([784,64,16,10])
+    nn:NeuralNetwork= load_parameters("./mnist_model.pkl")
     # Train with mini-batches
     print("Training neural network...")
-    nn.train(
-        X_train,  # Using first 10000 samples for faster training
-        y_train,
-        batch_size=128,
-        epochs=200000,
-        learning_rate=0.1,
-        xy_test=(X_test,y_test)
-    )
+    for x in trainRandomBatchIncremental(nn,x_train,y_train,32,0.1,30):
+        print(f"error:{x}")
     nn.save_parameters("mnist_model.pkl")
     # Evaluate on some test samples
     
