@@ -336,15 +336,21 @@ if __name__ == "__main__":
     
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
-#    nn:NeuralNetwork=load_parameters("./temp.pkl")
-    nn:NeuralNetwork= NeuralNetwork([784,30,10])
+#    nn:NeuralNetwork=load_parameters("./mnist_model.pkl")
+    nn:NeuralNetwork= NeuralNetwork([784,16,16,10])
     # Train with mini-batches
     print("Training neural network...")
-#    for x in trainRandomBatchIncremental(nn,x_train,y_train,32,1,30):
-#        print(f"error:{x}")
-    for x in range(100):
-        error=trainRandomBatchAll(nn,x_train,y_train,10,3.0,5);
-        print(f"Epoch {x}:Error :{error}")
+    for _ in range(30): 
+        for _ in trainRandomBatchIncremental(nn,x_train,y_train,10,3,1):
+            pass
+        nn.forward_pass(X_test)
+        print(f"Test Accuracy:{nn.error_check(y_test)}")
+
+#    for x in range(60):
+#        error=trainRandomBatchAll(nn,x_train,y_train,10,3.0);
+#        print(f"Epoch {x}:Error :{error}")
+#        nn.forward_pass(X_test)
+#        print(f"Test Accuracy:{nn.error_check(y_test)}")
     nn.save_parameters("mnist_model.pkl")
     # Evaluate on some test samples
     
