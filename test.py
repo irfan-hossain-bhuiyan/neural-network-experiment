@@ -9,5 +9,5 @@ def binaryIteration(n:int):
             xm1=x-(1<<i)
             yield (xm1,x)
         yield (x,x+1)
-print(list(binaryIteration(10)))
-
+import precptron as precptron
+precptron.gradientCheck()

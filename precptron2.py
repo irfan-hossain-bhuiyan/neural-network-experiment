@@ -5,6 +5,7 @@ from numpy._core.numeric import ndarray
 import numpy.random as ran
 import gzip
 import pickle
+from weightSet import WeightBaseList
 RED = "\033[91m"
 GREEN = "\033[92m"
 RESET = "\033[0m"
@@ -39,9 +40,10 @@ class NeuralNetwork:
                  errorFunction:ErrorFunction=sq_error,
                  errorFuntionDerivative:ErrorFunctionDerivative=sq_error_derivative):
         self.layers_dim=layers_dim
+        self.freeVariable=WeightBaseList(self.layers_dim)
         # Initialize weights and biases as before
-        self.weights=[ran.randn(y,x)-0.5 for x,y in zip(layers_dim,layers_dim[1:])]
-        self.biases=[ran.randn(x,1)-0.5 for x in layers_dim[1:]]
+        self.weights=self.freeVariable.weight_list
+        self.biases=self.freeVariable.bias_list
         # Neuron aren't initialized as array because of batches,As their are veraity of batches
         self.neuron:List[ndarray]=[None for x in layers_dim]
         self.non_linear_func=non_linear_func
@@ -66,7 +68,7 @@ class NeuralNetwork:
         #return self.neuron[-1]  # Return output activations
     
     # Updated to handle batch inputs
-    def backward_pass(self, expected:np.ndarray, learning_rate:float):
+    def gradient(self, expected:np.ndarray):
         """
         Perform backward pass with batch support
         
@@ -75,17 +77,17 @@ class NeuralNetwork:
             learning_rate: learning rate for gradient descent
         """
         batch_size = expected.shape[1]
-        
-        
+        derivative=self.freeVariable.copy()
         # Initial error derivative for output layer (now handles batches)
         in_derivative = self.errorFunctionDerivative(self.neuron[-1], expected) * \
                         self.non_linear_func_derivitave(self.neuron[-1])
         # in_derivative is now (neuron number, batch size)
         
         # Backpropagate through layers
-        for w, b, i in zip(self.weights[::-1], self.biases[::-1], self.neuron[:-1][::-1]):
+        for w, dw, db, i in zip(self.weights[::-1],derivative.weight_list[::-1]
+                           ,derivative.bias_list[::-1], self.neuron[:-1][::-1]):
             # Batch version of derivatives
-            b_derivative = np.sum(in_derivative, axis=1,keepdims=True)/batch_size  # Sum across batch dimension
+            db[...] = np.sum(in_derivative, axis=1,keepdims=True)/batch_size  # Sum across batch dimension
             # not need to divide by batch size as it is mean
             """
                 [[1,2,3],
@@ -95,7 +97,7 @@ class NeuralNetwork:
                                                                                                               [4],]
 
             """
-            w_derivative = (in_derivative @ i.T)/batch_size # Matrix multiplication handles all batch samples
+            dw[...] = (in_derivative @ i.T)/batch_size # Matrix multiplication handles all batch samples
 
             """
                w_derivative= [1   (inderivative)*[1 2 3 4](neuron)
@@ -114,13 +116,38 @@ class NeuralNetwork:
             in_derivative = w.T @ in_derivative * self.non_linear_func_derivitave(i)
             
             # Update weights and biases (single update using batch average)
-            w[...] -= learning_rate * w_derivative 
-            b[...] -= learning_rate * b_derivative 
-        
+        return derivative
     def costCheck(self,expected:ndarray)->float:
         return self.errorFunction(self.neuron[-1],expected)
     # New method for batch training
-    def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray, learning_rate:float,batch_iteration:int=1):
+    def train_batch_optimized(self, X_batch:np.ndarray, y_batch:np.ndarray
+                   ,learning_rate:float,batch_iteration:int=1,max_batch_size:int=512):
+        """
+        Train on a single batch
+        
+        Args:
+            X_batch: Input data with shape (input_dim, batch_size)
+            y_batch: Expected outputs with shape (output_dim, batch_size)
+            learning_rate: Learning rate for gradient descent
+            batch_iteration: times a batch is trained
+            max_batch_size: If the batch size exceed this,A small part of the batch will be taken
+        """
+        # Forward pass with batch
+        error=0
+        batch_size=y_batch.shape[1]
+        need_reduced=batch_size>max_batch_size
+        reduced_batch_size=np.floor(max_batch_size / 1.3)
+        for _ in range(batch_iteration):
+            if need_reduced:
+                index=np.random.randint(0,batch_size,reduced_batch_size)
+                X_batch=X_batch[index]
+                y_batch=y_batch[index]
+            self.forward_pass(X_batch)
+            error+=self.error_check(y_batch)
+            self.backward_pass(y_batch, learning_rate)
+        return error/batch_iteration
+    def train_batch(self, X_batch:np.ndarray, y_batch:np.ndarray,
+                    ,learning_rate:float,batch_iteration:int=1,backward_pass:Callable[[np.ndarray],np.ndarray]):
         """
         Train on a single batch
         
@@ -136,6 +163,7 @@ class NeuralNetwork:
             error+=self.error_check(y_batch)
             self.backward_pass(y_batch, learning_rate)
         return error/batch_iteration
+
     def predicted_value(self):
         return self.neuron[-1].argmax(axis=0)
     def error_check(self,y_value:np.ndarray):
@@ -148,7 +176,42 @@ class NeuralNetwork:
         print(f"Model parameters saved to {filename}")
     
 
+def gradientCheck():
+    epsilon = 1e-5
+    nn = NeuralNetwork([30, 10, 10, 20])
+    x_input = np.random.randn(30, 10)
+    y_input = np.random.randn(20, 10)
 
+    # Compute the cost with original parameters
+    nn.forward_pass(x_input)
+    cost = nn.costCheck(y_input)
+
+    manualGrad = np.empty_like(nn.freeVariable.core)
+
+    for i in range(len(nn.freeVariable.core)):
+        original_value = nn.freeVariable.core[i]
+
+        # Perturb
+        nn.freeVariable.core[i] = original_value + epsilon
+
+        # Forward pass and cost with perturbed weight
+        nn.forward_pass(x_input)
+        cost_new = nn.costCheck(y_input)
+
+        # Restore
+        nn.freeVariable.core[i] = original_value
+
+        # Compute finite difference gradient
+        manualGrad[i] = (cost_new - cost) / epsilon
+
+    # Compute analytical gradient
+    realGrad = nn.gradient(y_input)
+
+    # Difference
+    diff = manualGrad - realGrad.core
+    print("Max absolute difference:", np.max(np.abs(diff)))
+    print("Relative error:", np.linalg.norm(diff) / (np.linalg.norm(manualGrad) + np.linalg.norm(realGrad.core)))
+    print("Avg error(should be 0): ",np.sum(diff))
 
 def load_parameters(filename: str)->NeuralNetwork:
         """Load weights and biases from a file using pickle."""
@@ -180,7 +243,7 @@ def trainBatchall (nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray,
             trainError+=nn.train_batch(X_batch=x_train[:,chunkIndex:chunkIndex1],
                            y_batch=y_train[:,chunkIndex:chunkIndex1],
                            learning_rate=learning_rate,
-                           batchIteration=batchIteration,)
+                           batch_iteration=batchIteration,)
         trainError/=chunkAmount
         return trainError
 def trainRandomBatchAll(nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray,
@@ -258,10 +321,10 @@ if __name__ == "__main__":
     # Create neural network: 784 inputs, 128 hidden, 10 outputs
     print("Creating neural network...")
 #    nn:NeuralNetwork=load_parameters("./temp.pkl")
-    nn:NeuralNetwork= load_parameters("./mnist_model.pkl")
+    nn:NeuralNetwork= NeuralNetwork([784,30,10])
     # Train with mini-batches
     print("Training neural network...")
-    for x in trainRandomBatchIncremental(nn,x_train,y_train,32,0.1,30):
+    for x in trainRandomBatchIncremental(nn,x_train,y_train,32,0.1,100):
         print(f"error:{x}")
     nn.save_parameters("mnist_model.pkl")
     # Evaluate on some test samples
