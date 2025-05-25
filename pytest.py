@@ -1,12 +1,3 @@
-def a(c):
-    def cInc():
-        nonlocal c
-        c+=1
-        print(c)
-    return cInc
-s=a(4)
-s()
-s()
-d=a(20)
-s()
-
+import numpy as np
+a=np.array([1,2,3,34,0])
+np.save("test.npy",a)

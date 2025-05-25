@@ -1,0 +1,1 @@
+I don't think this is true,Think f as Relu function so in x=0,d/dx-=0,and d/dx+=1 for f(x)now think g(x)=-x then f(g(x))means relu flipped in x axis,so df(g(x))/dx+ should be 0,but I got -1 according to up rule

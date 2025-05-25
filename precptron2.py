@@ -51,6 +51,7 @@ def momentum(b:float=0.8):
                 prevoius_vec=ans
                 return ans
               return func
+
 class NeuralNetwork:
     def __init__(self,layers_dim:List[int],
                  non_linear_func:ArrayFunction=sigmoid,
@@ -114,7 +115,6 @@ class NeuralNetwork:
                            ,derivative.bias_list[::-1], self.neuron[:-1][::-1]):
             # Batch version of derivatives
             db[...] = np.sum(in_derivative, axis=1,keepdims=True)/batch_size  # Sum across batch dimension
-            # not need to divide by batch size as it is mean
             """
                 [[1,2,3],
                  [2,3,4],
@@ -199,11 +199,9 @@ class NeuralNetwork:
         return np.mean(self.predicted_value()==y_value.argmax(axis=0))
     # New method for full dataset training with mini-batches
     def save_parameters(self, filename: str):
-        """Save weights and biases to a file using pickle."""
-        with open(filename, 'wb') as f:
-            pickle.dump(self, f)
-        print(f"Model parameters saved to {filename}")
-    
+        np.save(filename,self.freeVariable.core)
+    def load_parameters(self,filename:str):
+        self.freeVariable.core[...]=np.load(filename)
 
 def gradientCheck():
     epsilon = 1e-4 #The error got higher ,The less the step size,
@@ -251,13 +249,6 @@ def gradientCheck():
         for idx in reversed(worst_indices):
             print(f"Parameter {idx}: Numerical: {manualGrad[idx]}, Analytical: {realGrad.core[idx]}, Diff: {diff[idx]}")
  
-
-def load_parameters(filename: str)->NeuralNetwork:
-        """Load weights and biases from a file using pickle."""
-        with open(filename, 'rb') as f:
-            nn = pickle.load(f)
-        print(f"Model parameters loaded from {filename}")
-        return nn
 
 def trainBatchall (nn:NeuralNetwork, x_train:np.ndarray, y_train:np.ndarray, 
                    batch_size:int, batchIteration:int=1):
@@ -360,15 +351,16 @@ if __name__ == "__main__":
     print("Creating neural network...")
 #    nn:NeuralNetwork=load_parameters("./temp.pkl")
     nn:NeuralNetwork= NeuralNetwork([784,30,10],learningAlgorithm=momentum())
+    nn.load_parameters("./mnist_model.npy")
     # Train with mini-batches
     print("Training neural network...")
 #    for x in trainRandomBatchIncremental(nn,x_train,y_train,32,1,30):
 #        print(f"error:{x}")
-    for x in range(20):
-        error=trainRandomBatchAll(nn,x_train,y_train,30,5);
+    for x in range(320):
+        error=trainRandomBatchAll(nn,x_train,y_train,10);
         print(f"Epoch {x}:Error :{error}")
         nn.forward_pass(X_test)
         print(f"Test Accuracy:{nn.error_check(y_test)}")
-    nn.save_parameters("mnist_model.pkl")
+    nn.save_parameters("mnist_model.npy")
     # Evaluate on some test samples
     
